@@ -51,18 +51,24 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         let message_string = format!("{}:{}", local_ufrag, local_pwd);
         let message = message_string.as_bytes();
-        sink.writable().await.unwrap();
-        sink.try_write(message).unwrap();
-    });
+        if is_controlling {
+            sink.writable().await.unwrap();
+            sink.try_write(message).unwrap();
+        }
 
-    tokio::spawn(async move {
         while let Ok(res) = stream.read(&mut buf).await {
             let bslice = std::str::from_utf8(&buf[..res]).unwrap().to_string();
             println!("Message: {}", bslice);
             // let message = std::str::from_utf8(&buf).unwrap();
+            if !is_controlling {
+                sink.writable().await.unwrap();
+                sink.try_write(message).unwrap();
+            }
             tx.send(bslice).await.unwrap();
+
         }
     });
+
     ice_agent.gather_candidates().await.unwrap();
     println!("Connecting...");
     let remote_credentials = rx.recv().await.unwrap();
@@ -86,7 +92,7 @@ async fn main() -> Result<()> {
 
 
 async fn create_ice_agent(is_controlling: bool) -> Result<Arc<Agent>> {
-    let local_port = if is_controlling { 4000 } else { 4001};
+    let local_port = 4000;
 
     let udp_network = {
         let udp_socket = UdpSocket::bind(("0.0.0.0", local_port)).await?;
