@@ -5,6 +5,7 @@ use tokio::io::{AsyncReadExt, ReadHalf, Result};
 use tokio::net::{TcpSocket, TcpStream, UdpSocket};
 use tokio::sync::mpsc;
 use tokio_util::codec::{ Framed, FramedRead, LinesCodec, LinesCodecError};
+use util::Conn;
 use webrtc_ice::agent::Agent;
 use webrtc_ice::agent::agent_config::AgentConfig;
 use webrtc_ice::candidate::Candidate;
@@ -39,7 +40,11 @@ async fn main() -> Result<()> {
     // Get the local auth details and send to remote peer
     let (local_ufrag, local_pwd) = ice_agent.get_local_user_credentials().await;
     println!("Connecting");
-    let mut connection = TcpStream::connect("127.0.0.1:9001").await?;
+    let connection = if is_controlling {
+        TcpStream::connect("127.0.0.1:9001").await?
+    } else {
+        TcpStream::connect("172.30.29.1:9001").await?
+    };
 
     let mut buf = [0;4096];
     let (mut stream, sink) = connection.into_split();
@@ -64,7 +69,13 @@ async fn main() -> Result<()> {
     let r = remote_credentials.split(":").take(2).collect::<Vec<&str>>();
     let (remote_ufrag, remote_pwd) = (r[0].to_string(), r[1].to_string());
     let (_cancel_tx, cancel_rx) = mpsc::channel(1);
-    ice_agent.dial(cancel_rx, remote_ufrag, remote_pwd).await.unwrap();
+    let conn: Arc<dyn Conn + Send + Sync> = if is_controlling {
+        ice_agent.dial(cancel_rx, remote_ufrag, remote_pwd).await.unwrap()
+    } else {
+        ice_agent
+            .accept(cancel_rx, remote_ufrag, remote_pwd)
+            .await.unwrap()
+    };
 
     println!("{}", remote_credentials);
     println!("Finished");
