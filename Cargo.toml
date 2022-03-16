@@ -1,0 +1,12 @@
+[package]
+name = "tcpclient"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio={version="1.2", features=["full"]}
+tokio-util ={version="0.7", features=["full"]}
+webrtc-ice="0.6.6"
+util = { package = "webrtc-util", version = "0.5.3", default-features = false, features = ["conn", "vnet", "sync"] }
