@@ -19,9 +19,9 @@ use webrtc_ice::udp_network::UDPNetwork;
 #[tokio::main]
 async fn main() -> Result<()> {
     let (tx, mut rx) = mpsc::channel(1);
-    let is_controlling = std::env::args().next().unwrap().parse::<bool>().unwrap();
+    let control_arg = std::env::args().take(2).collect::<Vec<String>>();
     let use_mux = false;
-
+    let is_controlling = control_arg[1].parse::<bool>().unwrap();
     let remote_port = 4000;
 
     let ice_agent = create_ice_agent(is_controlling).await.unwrap();
