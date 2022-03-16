@@ -17,7 +17,7 @@ use webrtc_ice::udp_network::UDPNetwork;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-
+    let (tx, mut rx) = mpsc::channel(1);
     let is_controlling = false;
     let use_mux = false;
 
@@ -38,26 +38,35 @@ async fn main() -> Result<()> {
         .await;
     // Get the local auth details and send to remote peer
     let (local_ufrag, local_pwd) = ice_agent.get_local_user_credentials().await;
-
-
-    // let tcp
-    // let tcp_socket = TcpSocket::new_v4().unwrap();
-    // let _ = tcp_socket.set_reuseaddr(true);
-    // let _ = tcp_socket.set_reuseport(true);
-    let mut connection = TcpStream::connect("172.30.29.3:9001").await?;
-    let message_string = format!("{}:{}", local_ufrag, local_pwd);
-    let message = message_string.as_bytes();
-    // let message = b"Hey there!";
-    // let mut framed_connection = Framed::new(connection, tokio_util::codec::LinesCodec::new());
-    // let _ = framed_connection.send(message).await;
-    let (mut stream, sink) = connection.split();
-    let mut buf = [0;8];
-    sink.writable().await?;
-    sink.try_write(message).unwrap();
     println!("Connecting");
-    while let Ok(res) = stream.read(&mut buf).await {
-        println!("{:?}", std::str::from_utf8(&buf));
-    }
+    let mut connection = TcpStream::connect("127.0.0.1:9001").await?;
+
+    let mut buf = [0;4096];
+    let (mut stream, sink) = connection.into_split();
+    tokio::spawn(async move {
+        let message_string = format!("{}:{}", local_ufrag, local_pwd);
+        let message = message_string.as_bytes();
+        sink.writable().await.unwrap();
+        sink.try_write(message).unwrap();
+    });
+
+    tokio::spawn(async move {
+        while let Ok(res) = stream.read(&mut buf).await {
+            let bslice = std::str::from_utf8(&buf[..res]).unwrap().to_string();
+            println!("Message: {}", bslice);
+            // let message = std::str::from_utf8(&buf).unwrap();
+            tx.send(bslice).await.unwrap();
+        }
+    });
+    ice_agent.gather_candidates().await.unwrap();
+    println!("Connecting...");
+    let remote_credentials = rx.recv().await.unwrap();
+    let r = remote_credentials.split(":").take(2).collect::<Vec<&str>>();
+    let (remote_ufrag, remote_pwd) = (r[0].to_string(), r[1].to_string());
+    let (_cancel_tx, cancel_rx) = mpsc::channel(1);
+    ice_agent.dial(cancel_rx, remote_ufrag, remote_pwd).await.unwrap();
+
+    println!("{}", remote_credentials);
     println!("Finished");
     Ok(())
 
