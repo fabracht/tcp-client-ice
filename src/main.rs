@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         let message_string = format!("{}:{}", local_ufrag, local_pwd);
         let message = message_string.as_bytes();
-        if is_controlling {
+        if !is_controlling {
             sink.writable().await.unwrap();
             sink.try_write(message).unwrap();
         }
@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
             let bslice = std::str::from_utf8(&buf[..res]).unwrap().to_string();
             println!("Message: {}", bslice);
             // let message = std::str::from_utf8(&buf).unwrap();
-            if !is_controlling {
+            if is_controlling {
                 sink.writable().await.unwrap();
                 sink.try_write(message).unwrap();
             }
