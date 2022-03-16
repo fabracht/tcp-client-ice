@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, ReadHalf, Result};
-use tokio::net::{TcpSocket, UdpSocket};
+use tokio::net::{TcpSocket, TcpStream, UdpSocket};
 use tokio::sync::mpsc;
 use tokio_util::codec::{ Framed, FramedRead, LinesCodec, LinesCodecError};
 use webrtc_ice::agent::Agent;
@@ -40,12 +40,11 @@ async fn main() -> Result<()> {
     let (local_ufrag, local_pwd) = ice_agent.get_local_user_credentials().await;
 
 
-
-    let tcp_socket = TcpSocket::new_v4().unwrap();
-    let addr = "127.0.0.1:8080".parse().unwrap();
+    // let tcp
+    // let tcp_socket = TcpSocket::new_v4().unwrap();
     // let _ = tcp_socket.set_reuseaddr(true);
     // let _ = tcp_socket.set_reuseport(true);
-    let mut connection = tcp_socket.connect(addr).await.unwrap();
+    let mut connection = TcpStream::connect("172.30.29.3:9001").await?;
     let message_string = format!("{}:{}", local_ufrag, local_pwd);
     let message = message_string.as_bytes();
     // let message = b"Hey there!";
@@ -55,7 +54,7 @@ async fn main() -> Result<()> {
     let mut buf = [0;8];
     sink.writable().await?;
     sink.try_write(message).unwrap();
-    println!("Listening on {:?}", addr);
+    println!("Connecting");
     while let Ok(res) = stream.read(&mut buf).await {
         println!("{:?}", std::str::from_utf8(&buf));
     }
