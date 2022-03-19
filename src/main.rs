@@ -39,6 +39,8 @@ async fn main() -> Result<()> {
         TcpStream::connect("172.30.29.1:9001").await?
     };
     ice_agent.on_candidate(handle_candidate(tx_cand)).await;
+    let ice_agent2 = Arc::clone(&ice_agent);
+
     let (stream, sink) = connection.into_split();
     tokio::spawn(async move {
         stream_handler(
@@ -48,13 +50,11 @@ async fn main() -> Result<()> {
             sink,
             stream,
             tx_auth,
+            ice_agent2,
+            rx_cand,
         )
         .await;
     });
-    
-
-    
-    let ice_agent2 = Arc::clone(&ice_agent);
 
     let (ice_done_tx, _ice_done_rx) = mpsc::channel::<()>(1);
 
@@ -70,22 +70,11 @@ async fn main() -> Result<()> {
 
     ice_agent.gather_candidates().await.unwrap();
     println!("Connecting...");
-    let remote_credentials = tokio::spawn(remote_auth_handler(rx_auth, ice_agent, is_controlling)).await.unwrap();
-    let candidate = rx_cand.recv().await;
+    let remote_credentials = tokio::spawn(remote_auth_handler(rx_auth, ice_agent, is_controlling))
+        .await
+        .unwrap();
     println!("Running");
 
-    if let Some(s) = candidate {
-        if let Ok(c) = unmarshal_candidate(&s).await {
-            println!("add_remote_candidate: {}", c);
-            let c: Arc<dyn Candidate + Send + Sync> = Arc::new(c);
-            let _ = ice_agent2.add_remote_candidate(&c).await;
-        } else {
-            println!("unmarshal_candidate error!");
-        }
-    } else {
-        println!("REMOTE_CAND_CHANNEL done!");
-    }
-    println!("{}", remote_credentials);
     println!("Finished");
     Ok(())
 }
@@ -94,28 +83,32 @@ async fn remote_auth_handler(
     mut rx_auth: mpsc::Receiver<String>,
     ice_agent: Arc<Agent>,
     is_controlling: bool,
-) -> String {
-    let remote_credentials_result = rx_auth.recv().await;
-    let remote_credentials = remote_credentials_result.clone().unwrap().clone();
+) {
+    loop {
+        tokio::select! {
+            remote_credentials_result = rx_auth.recv() => {
+                let remote_credentials = remote_credentials_result.clone().unwrap().clone();
 
-    let r = remote_credentials.split(":").take(2).collect::<Vec<&str>>();
-    let (remote_ufrag, remote_pwd) = (r[0].to_string(), r[1].to_string());
-    let (_cancel_tx, cancel_rx) = mpsc::channel(1);
-    let _conn: Arc<dyn Conn + Send + Sync> = if is_controlling {
-        std::thread::sleep(Duration::from_millis(100));
-        println!("Dialing...");
-        ice_agent
-            .dial(cancel_rx, remote_ufrag, remote_pwd)
-            .await
-            .unwrap()
-    } else {
-        println!("Accepting...");
-        ice_agent
-            .accept(cancel_rx, remote_ufrag, remote_pwd)
-            .await
-            .unwrap()
-    };
-    remote_credentials
+        let r = remote_credentials.split(":").take(2).collect::<Vec<&str>>();
+        let (remote_ufrag, remote_pwd) = (r[0].to_string(), r[1].to_string());
+        let (_cancel_tx, cancel_rx) = mpsc::channel(1);
+        let _conn: Arc<dyn Conn + Send + Sync> = if is_controlling {
+            std::thread::sleep(Duration::from_millis(100));
+            println!("Dialing...");
+            ice_agent
+                .dial(cancel_rx, remote_ufrag, remote_pwd)
+                .await
+                .unwrap()
+        } else {
+            println!("Accepting...");
+            ice_agent
+                .accept(cancel_rx, remote_ufrag, remote_pwd)
+                .await
+                .unwrap()
+        };
+            }
+        }
+    }
 }
 
 async fn stream_handler(
@@ -125,28 +118,48 @@ async fn stream_handler(
     sink: tokio::net::tcp::OwnedWriteHalf,
     mut stream: tokio::net::tcp::OwnedReadHalf,
     tx_auth: mpsc::Sender<String>,
+    ice_agent: Arc<Agent>,
+    mut rx_cand: mpsc::Receiver<String>,
 ) {
     let mut buf = [0u8; 4096];
     let message_string = format!("{}:{}", local_ufrag, local_pwd);
     let message = message_string.as_bytes();
+
     if !is_controlling {
         sink.writable().await.unwrap();
         sink.try_write(message).unwrap();
     }
-    while let Ok(res) = stream.read(&mut buf).await {
-        let bslice = std::str::from_utf8(&buf[..res]).unwrap().to_string();
-        println!("Message: {}", bslice);
-        // let message = std::str::from_utf8(&buf).unwrap();
-        if bslice.contains(":") {
-            println!("Sending remote auth: {}", bslice);
-            tx_auth.send(bslice).await.unwrap();
-            if is_controlling {
-                // If controlling, send our auth credentials
-                sink.writable().await.unwrap();
-                sink.try_write(message).unwrap();
+    loop {
+        tokio::select! {
+            candidate = rx_cand.recv() => {
+                println!("{:?}", candidate);
+                if let Some(s) = candidate {
+                    if let Ok(c) = unmarshal_candidate(&s).await {
+                        println!("add_remote_candidate: {}", c);
+                        let c: Arc<dyn Candidate + Send + Sync> = Arc::new(c);
+                        let _ = ice_agent.add_remote_candidate(&c).await;
+                    } else {
+                        println!("unmarshal_candidate error!");
+                    }
+                } else {
+                    println!("REMOTE_CAND_CHANNEL done!");
+                }
+            },
+            Ok(res) = stream.read(&mut buf) => {
+                let bslice = std::str::from_utf8(&buf[..res]).unwrap().to_string();
+                println!("Message: {}", bslice);
+                // let message = std::str::from_utf8(&buf).unwrap();
+                if bslice.contains(":") {
+                    println!("Sending remote auth: {}", bslice);
+                    tx_auth.send(bslice).await.unwrap();
+                    if is_controlling {
+                        // If controlling, send our auth credentials
+                        sink.writable().await.unwrap();
+                        sink.try_write(message).unwrap();
+                    }
+                }
             }
         }
-        
     }
 }
 
@@ -182,10 +195,9 @@ fn handle_candidate<'a>(
         Box::pin(async move {
             let tx_cand = tx_cand.clone();
             if let Some(c) = c {
-                tokio::join!(async move {
-                    println!("posting remoteCandidate with {}", c.marshal());
-                    tx_cand.send(c.marshal()).await.unwrap();
-                });
+                println!("posting remoteCandidate with {}", c.marshal());
+
+                tx_cand.send(c.marshal()).await.unwrap();
             }
         })
     })
