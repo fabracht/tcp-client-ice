@@ -134,13 +134,8 @@ async fn stream_handler(
             candidate = rx_cand.recv() => {
                 println!("{:?}", candidate);
                 if let Some(s) = candidate {
-                    if let Ok(c) = unmarshal_candidate(&s).await {
-                        println!("add_remote_candidate: {}", c);
-                        let c: Arc<dyn Candidate + Send + Sync> = Arc::new(c);
-                        let _ = ice_agent.add_remote_candidate(&c).await;
-                    } else {
-                        println!("unmarshal_candidate error!");
-                    }
+                    sink.writable().await.unwrap();
+                    sink.try_write(s.as_bytes()).unwrap();
                 } else {
                     println!("REMOTE_CAND_CHANNEL done!");
                 }
@@ -156,6 +151,14 @@ async fn stream_handler(
                         // If controlling, send our auth credentials
                         sink.writable().await.unwrap();
                         sink.try_write(message).unwrap();
+                    }
+                } else {
+                    if let Ok(c) = unmarshal_candidate(&bslice).await {
+                        println!("add_remote_candidate: {}", c);
+                        let c: Arc<dyn Candidate + Send + Sync> = Arc::new(c);
+                        let _ = ice_agent.add_remote_candidate(&c).await;
+                    } else {
+                        println!("unmarshal_candidate error!");
                     }
                 }
             }
