@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, Result};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc::{self};
@@ -69,7 +70,7 @@ async fn main() -> Result<()> {
 
     ice_agent.gather_candidates().await.unwrap();
     println!("Connecting...");
-    let remote_credentials = remote_auth_handler(rx_auth, ice_agent, is_controlling).await;
+    let remote_credentials = tokio::spawn(remote_auth_handler(rx_auth, ice_agent, is_controlling)).await.unwrap();
     let candidate = rx_cand.recv().await;
     println!("Running");
 
@@ -101,6 +102,7 @@ async fn remote_auth_handler(
     let (remote_ufrag, remote_pwd) = (r[0].to_string(), r[1].to_string());
     let (_cancel_tx, cancel_rx) = mpsc::channel(1);
     let _conn: Arc<dyn Conn + Send + Sync> = if is_controlling {
+        std::thread::sleep(Duration::from_millis(100));
         println!("Dialing...");
         ice_agent
             .dial(cancel_rx, remote_ufrag, remote_pwd)
