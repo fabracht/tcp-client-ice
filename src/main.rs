@@ -157,6 +157,8 @@ async fn stream_handler(
                         println!("add_remote_candidate: {}", c);
                         let c: Arc<dyn Candidate + Send + Sync> = Arc::new(c);
                         let _ = ice_agent.add_remote_candidate(&c).await;
+                        sink.writable().await.unwrap();
+                        sink.try_write(bslice.as_bytes()).unwrap();
                     } else {
                         println!("unmarshal_candidate error!");
                     }
