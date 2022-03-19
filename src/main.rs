@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, Result};
 use tokio::net::{TcpStream, UdpSocket};
-use tokio::sync::mpsc::{self, Receiver};
+use tokio::sync::mpsc::{self};
 
 use util::Conn;
 use webrtc_ice::agent::agent_config::AgentConfig;
@@ -18,7 +18,7 @@ use webrtc_ice::udp_network::UDPNetwork;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let (tx_auth, mut rx_auth) = mpsc::channel(1);
+    let (tx_auth, rx_auth) = mpsc::channel(1);
     let (tx_cand, mut rx_cand) = mpsc::channel(1);
 
     let control_arg = std::env::args().take(2).collect::<Vec<String>>();
@@ -37,10 +37,17 @@ async fn main() -> Result<()> {
         TcpStream::connect("172.30.29.1:9001").await?
     };
 
-
-    let (mut stream, sink) = connection.into_split();
+    let (stream, sink) = connection.into_split();
     tokio::spawn(async move {
-        stream_handler(local_ufrag, local_pwd, is_controlling, sink, stream, tx_auth).await;
+        stream_handler(
+            local_ufrag,
+            local_pwd,
+            is_controlling,
+            sink,
+            stream,
+            tx_auth,
+        )
+        .await;
     });
 
     ice_agent.on_candidate(handle_candidate(tx_cand)).await;
@@ -60,7 +67,6 @@ async fn main() -> Result<()> {
         println!("REMOTE_CAND_CHANNEL done!");
     }
 
-
     let (ice_done_tx, _ice_done_rx) = mpsc::channel::<()>(1);
 
     ice_agent
@@ -72,7 +78,6 @@ async fn main() -> Result<()> {
             Box::pin(async move {})
         }))
         .await;
-    
 
     ice_agent.gather_candidates().await.unwrap();
     println!("Connecting...");
@@ -83,10 +88,14 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn remote_auth_handler(mut rx_auth: mpsc::Receiver<String>, ice_agent: Arc<Agent>, is_controlling: bool) -> String {
+async fn remote_auth_handler(
+    mut rx_auth: mpsc::Receiver<String>,
+    ice_agent: Arc<Agent>,
+    is_controlling: bool,
+) -> String {
     let remote_credentials_result = rx_auth.recv().await;
     let remote_credentials = remote_credentials_result.clone().unwrap().clone();
-    
+
     let r = remote_credentials.split(":").take(2).collect::<Vec<&str>>();
     let (remote_ufrag, remote_pwd) = (r[0].to_string(), r[1].to_string());
     let (_cancel_tx, cancel_rx) = mpsc::channel(1);
@@ -106,8 +115,15 @@ async fn remote_auth_handler(mut rx_auth: mpsc::Receiver<String>, ice_agent: Arc
     remote_credentials
 }
 
-async fn stream_handler(local_ufrag: String, local_pwd: String, is_controlling: bool, sink: tokio::net::tcp::OwnedWriteHalf, mut stream: tokio::net::tcp::OwnedReadHalf, tx_auth: mpsc::Sender<String>) {
-    let mut buf =  [0u8; 4096];
+async fn stream_handler(
+    local_ufrag: String,
+    local_pwd: String,
+    is_controlling: bool,
+    sink: tokio::net::tcp::OwnedWriteHalf,
+    mut stream: tokio::net::tcp::OwnedReadHalf,
+    tx_auth: mpsc::Sender<String>,
+) {
+    let mut buf = [0u8; 4096];
     let message_string = format!("{}:{}", local_ufrag, local_pwd);
     let message = message_string.as_bytes();
     if !is_controlling {
@@ -125,7 +141,6 @@ async fn stream_handler(local_ufrag: String, local_pwd: String, is_controlling: 
             // If controlling, send our auth credentials
             sink.writable().await.unwrap();
             sink.try_write(message).unwrap();
-
         }
     }
 }
@@ -149,7 +164,9 @@ async fn create_ice_agent(_is_controlling: bool) -> Result<Arc<Agent>> {
     Ok(ice_agent)
 }
 
-fn handle_candidate<'a>(tx_cand: tokio::sync::mpsc::Sender<String>) -> Box<
+fn handle_candidate<'a>(
+    tx_cand: tokio::sync::mpsc::Sender<String>,
+) -> Box<
     dyn FnMut(Option<Arc<dyn Candidate + Send + Sync>>) -> Pin<Box<dyn Future<Output = ()> + Send>>
         + Send
         + Sync,
@@ -164,7 +181,6 @@ fn handle_candidate<'a>(tx_cand: tokio::sync::mpsc::Sender<String>) -> Box<
                 tokio::join!(async move {
                     tx_cand.send(c.marshal()).await.unwrap();
                 });
-                
             }
         })
     })
