@@ -135,6 +135,7 @@ async fn stream_handler(
         println!("Message: {}", bslice);
         // let message = std::str::from_utf8(&buf).unwrap();
         if bslice.contains(":") {
+            println!("Sending remote auth: {}", bslice);
             tx_auth.send(bslice).await.unwrap();
         }
         if is_controlling {
