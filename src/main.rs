@@ -1,33 +1,32 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, ReadHalf, Result};
-use tokio::net::{TcpSocket, TcpStream, UdpSocket};
+use tokio::io::{AsyncReadExt, Result};
+use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::mpsc;
-use tokio_util::codec::{ Framed, FramedRead, LinesCodec, LinesCodecError};
+
 use util::Conn;
-use webrtc_ice::agent::Agent;
 use webrtc_ice::agent::agent_config::AgentConfig;
+use webrtc_ice::agent::Agent;
 use webrtc_ice::candidate::Candidate;
-use webrtc_ice::Error;
+
 use webrtc_ice::candidate::candidate_base::unmarshal_candidate;
 use webrtc_ice::network_type::NetworkType;
 use webrtc_ice::state::ConnectionState;
 use webrtc_ice::udp_mux::{UDPMuxDefault, UDPMuxParams};
 use webrtc_ice::udp_network::UDPNetwork;
 
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let (tx, mut rx) = mpsc::channel(1);
     let control_arg = std::env::args().take(2).collect::<Vec<String>>();
-    let use_mux = false;
+    let _use_mux = false;
     let is_controlling = control_arg[1].parse::<bool>().unwrap();
-    let remote_port = 4000;
+    let _remote_port = 4000;
 
     let ice_agent = create_ice_agent(is_controlling).await.unwrap();
     ice_agent.on_candidate(handle_candidate()).await;
-    let (ice_done_tx, mut ice_done_rx) = mpsc::channel::<()>(1);
+    let (ice_done_tx, _ice_done_rx) = mpsc::channel::<()>(1);
 
     ice_agent
         .on_connection_state_change(Box::new(move |c: ConnectionState| {
@@ -47,7 +46,7 @@ async fn main() -> Result<()> {
         TcpStream::connect("172.30.29.1:9001").await?
     };
 
-    let mut buf = [0;4096];
+    let mut buf = [0; 4096];
     let (mut stream, sink) = connection.into_split();
     tokio::spawn(async move {
         let message_string = format!("{}:{}", local_ufrag, local_pwd);
@@ -66,7 +65,6 @@ async fn main() -> Result<()> {
                 sink.try_write(message).unwrap();
             }
             tx.send(bslice).await.unwrap();
-
         }
     });
 
@@ -82,36 +80,35 @@ async fn main() -> Result<()> {
             println!("add_remote_candidate: {}", c);
             let c: Arc<dyn Candidate + Send + Sync> = Arc::new(c);
             let _ = ice_agent2.add_remote_candidate(&c).await;
-        }else{
+        } else {
             println!("unmarshal_candidate error!");
         }
-    } else{
+    } else {
         println!("REMOTE_CAND_CHANNEL done!");
     }
 
     let r = remote_credentials.split(":").take(2).collect::<Vec<&str>>();
     let (remote_ufrag, remote_pwd) = (r[0].to_string(), r[1].to_string());
 
-    
-
     let (_cancel_tx, cancel_rx) = mpsc::channel(1);
-    let conn: Arc<dyn Conn + Send + Sync> = if is_controlling {
-        ice_agent.dial(cancel_rx, remote_ufrag, remote_pwd).await.unwrap()
+    let _conn: Arc<dyn Conn + Send + Sync> = if is_controlling {
+        ice_agent
+            .dial(cancel_rx, remote_ufrag, remote_pwd)
+            .await
+            .unwrap()
     } else {
         ice_agent
             .accept(cancel_rx, remote_ufrag, remote_pwd)
-            .await.unwrap()
+            .await
+            .unwrap()
     };
 
     println!("{}", remote_credentials);
     println!("Finished");
     Ok(())
-
 }
 
-
-
-async fn create_ice_agent(is_controlling: bool) -> Result<Arc<Agent>> {
+async fn create_ice_agent(_is_controlling: bool) -> Result<Arc<Agent>> {
     let local_port = 4000;
 
     let udp_network = {
@@ -124,16 +121,16 @@ async fn create_ice_agent(is_controlling: bool) -> Result<Arc<Agent>> {
         udp_network,
         ..Default::default()
     })
-        .await.unwrap();
+    .await
+    .unwrap();
     let ice_agent = Arc::new(agent);
     Ok(ice_agent)
 }
 
-
 fn handle_candidate<'a>() -> Box<
     dyn FnMut(Option<Arc<dyn Candidate + Send + Sync>>) -> Pin<Box<dyn Future<Output = ()> + Send>>
-    + Send
-    + Sync,
+        + Send
+        + Sync,
 > {
     Box::new(move |c: Option<Arc<dyn Candidate + Send + Sync>>| {
         Box::pin(async move {
