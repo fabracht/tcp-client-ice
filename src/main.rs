@@ -137,12 +137,13 @@ async fn stream_handler(
         if bslice.contains(":") {
             println!("Sending remote auth: {}", bslice);
             tx_auth.send(bslice).await.unwrap();
+            if is_controlling {
+                // If controlling, send our auth credentials
+                sink.writable().await.unwrap();
+                sink.try_write(message).unwrap();
+            }
         }
-        if is_controlling {
-            // If controlling, send our auth credentials
-            sink.writable().await.unwrap();
-            sink.try_write(message).unwrap();
-        }
+        
     }
 }
 
