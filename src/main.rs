@@ -71,13 +71,16 @@ async fn main() -> Result<()> {
         .await;
 
     ice_agent.gather_candidates().await.unwrap();
+    let ice_agent1 = Arc::clone(&ice_agent);
     println!("Connecting...");
-    let remote_credentials = tokio::spawn(remote_auth_handler(rx_auth, ice_agent, is_controlling))
+    let _ = tokio::spawn(remote_auth_handler(rx_auth, ice_agent1, is_controlling))
         .await
         .unwrap();
-    println!("Running");
 
     println!("Finished");
+
+    let _ = ice_agent.close().await;
+
     Ok(())
 }
 
@@ -94,7 +97,7 @@ async fn remote_auth_handler(
                 let r = remote_credentials.split(":").take(2).collect::<Vec<&str>>();
                 let (remote_ufrag, remote_pwd) = (r[0].to_string(), r[1].to_string());
                 let (_cancel_tx, cancel_rx) = mpsc::channel(1);
-                let _conn: Arc<dyn Conn + Send + Sync> = if is_controlling {
+                let conn: Arc<dyn Conn + Send + Sync> = if is_controlling {
                     println!("Dialing...");
                     ice_agent
                         .dial(cancel_rx, remote_ufrag, remote_pwd)
@@ -107,6 +110,7 @@ async fn remote_auth_handler(
                         .await
                         .unwrap()
                 };
+                conn.send(b"Hi there peer").await.unwrap();
             }
         }
     }
