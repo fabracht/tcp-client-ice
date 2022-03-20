@@ -130,11 +130,13 @@ async fn stream_handler(
         sink.writable().await.unwrap();
         sink.try_write(message).unwrap();
     }
+    let mut candidate_string: String = String::new();
     loop {
         tokio::select! {
             candidate = rx_cand.recv() => {
                 println!("{:?}", candidate);
                 if let Some(s) = candidate {
+                    candidate_string = s.clone();
                     sink.writable().await.unwrap();
                     sink.try_write(s.as_bytes()).unwrap();
                 } else {
@@ -162,7 +164,7 @@ async fn stream_handler(
                         if is_controlling {
                             // If controlling, send our auth credentials
                             sink.writable().await.unwrap();
-                            sink.try_write(bslice.as_bytes()).unwrap();
+                            sink.try_write(candidate_string.as_bytes()).unwrap();
                         }
                     } else {
                         println!("unmarshal_candidate error!");
