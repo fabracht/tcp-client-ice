@@ -25,7 +25,9 @@ async fn main() -> Result<()> {
 
     let control_arg = std::env::args().take(2).collect::<Vec<String>>();
     let _use_mux = false;
-    let is_controlling = control_arg[1].parse::<bool>().unwrap();
+    let control_default = "false".to_string();
+    let first_arg = control_arg.get(1).unwrap_or(&control_default);
+    let is_controlling = first_arg.parse::<bool>().unwrap_or(false);
     let _remote_port = 4000;
     let ice_agent = create_ice_agent(is_controlling).await.unwrap();
 
