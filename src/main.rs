@@ -89,23 +89,22 @@ async fn remote_auth_handler(
             remote_credentials_result = rx_auth.recv() => {
                 let remote_credentials = remote_credentials_result.clone().unwrap().clone();
 
-        let r = remote_credentials.split(":").take(2).collect::<Vec<&str>>();
-        let (remote_ufrag, remote_pwd) = (r[0].to_string(), r[1].to_string());
-        let (_cancel_tx, cancel_rx) = mpsc::channel(1);
-        let _conn: Arc<dyn Conn + Send + Sync> = if is_controlling {
-            std::thread::sleep(Duration::from_millis(100));
-            println!("Dialing...");
-            ice_agent
-                .dial(cancel_rx, remote_ufrag, remote_pwd)
-                .await
-                .unwrap()
-        } else {
-            println!("Accepting...");
-            ice_agent
-                .accept(cancel_rx, remote_ufrag, remote_pwd)
-                .await
-                .unwrap()
-        };
+                let r = remote_credentials.split(":").take(2).collect::<Vec<&str>>();
+                let (remote_ufrag, remote_pwd) = (r[0].to_string(), r[1].to_string());
+                let (_cancel_tx, cancel_rx) = mpsc::channel(1);
+                let _conn: Arc<dyn Conn + Send + Sync> = if is_controlling {
+                    println!("Dialing...");
+                    ice_agent
+                        .dial(cancel_rx, remote_ufrag, remote_pwd)
+                        .await
+                        .unwrap()
+                } else {
+                    println!("Accepting...");
+                    ice_agent
+                        .accept(cancel_rx, remote_ufrag, remote_pwd)
+                        .await
+                        .unwrap()
+                };
             }
         }
     }
