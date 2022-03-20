@@ -158,7 +158,7 @@ async fn stream_handler(
                         println!("add_remote_candidate: {}", c);
                         let c: Arc<dyn Candidate + Send + Sync> = Arc::new(c);
                         let _ = ice_agent.add_remote_candidate(&c).await;
-                        
+
                         if is_controlling {
                             // If controlling, send our auth credentials
                             sink.writable().await.unwrap();
